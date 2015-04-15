@@ -1,0 +1,5 @@
+gcc -pg -g -ggdb -Wall -O3   -c -o color.o color.c
+gcc -pg -g -ggdb -Wall -O3   -c -o util.o util.c
+gcc -pg -g -ggdb -Wall -O3   -c -o hca.o hca.c
+gcc -pg -g -ggdb -Wall -O3   -c -o tabucol.o tabucol.c
+gcc -o hca -pg -g -ggdb -Wall -O3 color.o util.o hca.o tabucol.o -lm
