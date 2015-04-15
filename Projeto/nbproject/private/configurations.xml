@@ -6,6 +6,7 @@
       <in>color.h</in>
       <in>hca.c</in>
       <in>hca.h</in>
+      <in>main.c</in>
       <in>tabucol.c</in>
       <in>tabucol.h</in>
       <in>util.c</in>

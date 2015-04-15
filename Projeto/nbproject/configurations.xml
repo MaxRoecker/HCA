@@ -4,6 +4,7 @@
     <df root="." name="0">
       <in>color.c</in>
       <in>hca.c</in>
+      <in>main.c</in>
       <in>tabucol.c</in>
       <in>util.c</in>
     </df>
@@ -46,6 +47,8 @@
       <item path="hca.c" ex="false" tool="0" flavor2="0">
         <cTool flags="0">
         </cTool>
+      </item>
+      <item path="main.c" ex="false" tool="0" flavor2="0">
       </item>
       <item path="tabucol.c" ex="false" tool="0" flavor2="0">
         <cTool flags="0">
