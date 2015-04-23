@@ -13,6 +13,9 @@
 #include <getopt.h>
 #include <stdlib.h>
 #include <string.h>
+/* ALTERADO POR JOAO LUIZ E MAX */
+#include <pthread.h>
+/* FIM DA ALTERAÇÃO */
 #include "color.h"
 #include "util.h"
 #include "hca.h"
@@ -432,6 +435,8 @@ int main(int argc, char *argv[]) {
     
     /* ALTERADO POR JOAO LUIZ E MAX */
     initialize_buffer();
+    
+    
     /* FIM DA ALTERAÇÃO */
 
     printbanner();

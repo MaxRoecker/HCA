@@ -41,22 +41,14 @@
         </makeTool>
       </makefileType>
       <item path="color.c" ex="false" tool="0" flavor2="0">
-        <cTool flags="0">
-        </cTool>
       </item>
       <item path="hca.c" ex="false" tool="0" flavor2="0">
-        <cTool flags="0">
-        </cTool>
       </item>
       <item path="main.c" ex="false" tool="0" flavor2="0">
       </item>
       <item path="tabucol.c" ex="false" tool="0" flavor2="0">
-        <cTool flags="0">
-        </cTool>
       </item>
       <item path="util.c" ex="false" tool="0" flavor2="0">
-        <cTool flags="0">
-        </cTool>
       </item>
     </conf>
   </confs>

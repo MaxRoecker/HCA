@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <limits.h>
+#include <pthread.h>
 #include "color.h"
 #include "util.h"
 #include "tabucol.h"
@@ -26,11 +27,18 @@ extern int indexBufferCrossover;
 extern gcp_solution_t *bufferTabucol[BUFFER_SIZE];
 extern int indexBufferTabucol;
 
+static gcp_solution_t *crossoverReturn;
+pthread_t crossOverThread;
+pthread_t tabucolThreads[BUFFER_SIZE];
+pthread_t updatePopulationThread;
+
 /* FIM DA ALTERACAO */
 
 static gcp_solution_t **population;
 static gcp_solution_t *best_solution;
 static gcp_solution_t *offspring;
+
+
 
 void hca_printbanner(void) {
     fprintf(problem->fileout, "HCA\n");
@@ -278,9 +286,9 @@ static void crossover(int p1, int p2) {
     test_solution(population[p2]);
     test_solution(offspring);
     
-    /*ALTERADO POR JOAO LUIZ E MAX*/    
-    cpy_solution(offspring,bufferCrossover[indexBufferCrossover]);
-    /*FIM DA ALTERACAO*/
+    /*###*/    
+    cpy_solution(offspring,crossoverReturn);
+    /*###*/
 }
 
 static int substitute_worst(int p1, int p2, gcp_solution_t* offspring) {/*{{{*/
@@ -337,12 +345,24 @@ static int hca_terminate_conditions(gcp_solution_t *solution, int diversity) {
 
 }
 
-/*MODIFICADO POR JOAO LUIX E MAX*/
+/*###*/
 void *filler(void *threadId){
     long tid;
     tid = (long) threadId;
-    printf("Hello World! It's me, thread #%ld!\n",tid);
-    pthread_exit(NULL);
+    int parent1, parent2;
+    while(1){
+        choose_parents(&parent1, &parent2);
+        crossover(parent1, parent2);
+        bufferCrossover[indexBufferCrossover] = crossoverReturn;
+        indexBufferCrossover++;
+        
+        printf("Indice do filler: %d\n",indexBufferCrossover);
+        
+        if(indexBufferCrossover == BUFFER_SIZE){
+            indexBufferCrossover = 0;
+                       
+        }
+    }
 }
 
 gcp_solution_t* hca(void) {
@@ -357,14 +377,24 @@ gcp_solution_t* hca(void) {
     best_solution = init_solution();
     best_solution->nof_confl_edges = INT_MAX;
     offspring = init_solution();
+    /*###*/
+    crossoverReturn = init_solution();
+    /*###*/
     create_population();
+    
+    /*###*/
+        pthread_create(&crossOverThread,NULL,filler, (void*) 1);
+    /*###*/
+    
 
     while (!hca_terminate_conditions(best_solution, hca_info->diversity) &&
             !terminate_conditions(best_solution, cycle, converg)) {
 
-        choose_parents(&parent1, &parent2);
+        /*choose_parents(&parent1, &parent2);
         crossover(parent1, parent2);
-        cross++;
+        cross++;*/
+        
+        
         tabucol(offspring, hca_info->cyc_local_search, tabucol_info->tl_style);
         sp = substitute_worst(parent1, parent2, offspring);
 

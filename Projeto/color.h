@@ -37,9 +37,9 @@
 #define STOP_CONV	4
 #define STOP_ALG	5 // specific for some algorithms
 
-/* ALTERADO POR JOAO LUIZ E MAX */
+/*###*/
 #define BUFFER_SIZE 10
-/*FIM DA ALTERACAO*/
+/*###*/
 
 struct gcp_t {
   int nof_vertices;		// number of vertices
