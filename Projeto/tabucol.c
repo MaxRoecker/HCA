@@ -224,7 +224,6 @@ static void neighbor_solution(int best_node, int best_color,
 }
 
 void tabucol(gcp_solution_t *solution, int max_cycles, int type_of_tl) {
-
   if (max_cycles >= 0) {
     tabucol_info = malloc_(sizeof(tabucol_t));
     tabucol_info->tl_style = type_of_tl;

@@ -13,9 +13,9 @@
 #include <getopt.h>
 #include <stdlib.h>
 #include <string.h>
-/* ALTERADO POR JOAO LUIZ E MAX */
+/* ### */
 #include <pthread.h>
-/* FIM DA ALTERAÇÃO */
+/* ### */
 #include "color.h"
 #include "util.h"
 #include "hca.h"
@@ -380,7 +380,7 @@ int terminate_conditions(gcp_solution_t *solution, int cycle, int converg) {
 
 }
 
-/* ALTERADO POR JOAO LUIZ E MAX */
+/* ### */
 gcp_solution_t *bufferCrossover[BUFFER_SIZE];
 int indexBufferCrossover = 0;
 gcp_solution_t *bufferTabucol[BUFFER_SIZE];
@@ -392,6 +392,8 @@ void initialize_buffer(){
         bufferCrossover[i] = init_solution();
     }
 }
+
+/* ### */
 
 int main(int argc, char *argv[]) {
     
@@ -433,11 +435,10 @@ int main(int argc, char *argv[]) {
 
     initialization();
     
-    /* ALTERADO POR JOAO LUIZ E MAX */
+    /*###*/
     initialize_buffer();
     
-    
-    /* FIM DA ALTERAÇÃO */
+    /*###*/
 
     printbanner();
 

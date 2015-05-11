@@ -4,6 +4,8 @@
     <df root="." name="0">
       <in>color.c</in>
       <in>color.h</in>
+      <in>cond.c</in>
+      <in>condtest.c</in>
       <in>hca.c</in>
       <in>hca.h</in>
       <in>main.c</in>

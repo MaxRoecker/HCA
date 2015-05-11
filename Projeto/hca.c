@@ -21,18 +21,23 @@
 #include "tabucol.h"
 #include "hca.h"
 
-/* ALTERADO POR JOAO LUIZ E MAX */
+/* ### */
 extern gcp_solution_t *bufferCrossover[BUFFER_SIZE];
 extern int indexBufferCrossover;
-extern gcp_solution_t *bufferTabucol[BUFFER_SIZE];
-extern int indexBufferTabucol;
 
 static gcp_solution_t *crossoverReturn;
 pthread_t crossOverThread;
 pthread_t tabucolThreads[BUFFER_SIZE];
 pthread_t updatePopulationThread;
 
-/* FIM DA ALTERACAO */
+pthread_mutex_t mutex_pipeline_stage;
+pthread_mutex_t mutex_indexBufferCrossover;
+
+pthread_cond_t cond_pipeline_fill_buffer;
+pthread_cond_t cond_pipeline_empty_buffer;
+pthread_cond_t cond_pipeline_update_population;
+
+/* ### */
 
 static gcp_solution_t **population;
 static gcp_solution_t *best_solution;
@@ -347,23 +352,49 @@ static int hca_terminate_conditions(gcp_solution_t *solution, int diversity) {
 
 /*###*/
 void *filler(void *threadId){
-    long tid;
-    tid = (long) threadId;
+    long tid = (long) threadId;
     int parent1, parent2;
     while(1){
-        choose_parents(&parent1, &parent2);
-        crossover(parent1, parent2);
-        bufferCrossover[indexBufferCrossover] = crossoverReturn;
-        indexBufferCrossover++;
-        
-        printf("Indice do filler: %d\n",indexBufferCrossover);
-        
+        pthread_mutex_lock(&mutex_pipeline_stage);
         if(indexBufferCrossover == BUFFER_SIZE){
-            indexBufferCrossover = 0;
-                       
+            printf("Filler #%ld: Preencheu o buffer com filhos.\n",tid);
+            pthread_cond_broadcast(&cond_pipeline_empty_buffer);
+            pthread_cond_wait(&cond_pipeline_fill_buffer,&mutex_pipeline_stage);
+        }else{
+            choose_parents(&parent1, &parent2);
+            crossover(parent1, parent2);
+            bufferCrossover[indexBufferCrossover] = crossoverReturn;
+            indexBufferCrossover++;
+        }
+        pthread_mutex_unlock(&mutex_pipeline_stage);
+    }
+}
+
+void *emptier(void *threadId){
+    long int id = (long int) threadId;
+    while(1){
+        pthread_cond_wait(&cond_pipeline_empty_buffer,&mutex_pipeline_stage);
+        pthread_mutex_unlock(&mutex_pipeline_stage);
+        
+        /*int r = rand() % 10;
+        printf("Emptier #%ld: Esperar %d segundos\n",id,r);
+        sleep(r);*/
+        
+        gcp_solution_t *item = bufferCrossover[id];
+        printf("#%ld: pegou a solução com %d ciclos para realizar a Busca TABUCOL\n",id,item->cycles_to_best);
+        tabucol(item,hca_info->cyc_local_search,tabucol_info->tl_style);
+        printf("#%ld: Terminou tabucol - Conflitos: %d\n",id,item->nof_confl_edges);
+        pthread_mutex_lock(&mutex_indexBufferCrossover);
+        indexBufferCrossover--;
+        pthread_mutex_unlock(&mutex_indexBufferCrossover);
+        if(indexBufferCrossover == 0){
+            printf("#%ld: Acordou Filler\n",id);
+            pthread_cond_broadcast(&cond_pipeline_fill_buffer);
         }
     }
 }
+
+/*###*/
 
 gcp_solution_t* hca(void) {
 
@@ -383,7 +414,30 @@ gcp_solution_t* hca(void) {
     create_population();
     
     /*###*/
-        pthread_create(&crossOverThread,NULL,filler, (void*) 1);
+    pthread_t fillerThreads[1];
+    pthread_t emptierThreads[BUFFER_SIZE];
+    
+    pthread_mutex_init(&mutex_pipeline_stage, NULL);
+    pthread_mutex_init(&mutex_indexBufferCrossover, NULL);
+    pthread_cond_init(&cond_pipeline_empty_buffer, NULL);
+    pthread_cond_init(&cond_pipeline_fill_buffer, NULL);
+    pthread_cond_init(&cond_pipeline_update_population, NULL);
+    
+    long int i;
+    for(i = 0; i < 1; i++){
+        pthread_create(&fillerThreads[i],NULL,filler,(void*)i);
+    }
+    for(i = 0; i < BUFFER_SIZE; i++){
+        pthread_create(&emptierThreads[i],NULL,emptier,(void*)i);
+    }
+    
+    for(i = 0; i < 1; i++){
+        pthread_join(fillerThreads[i],NULL);
+    }
+    for(i = 0; i < BUFFER_SIZE; i++){
+        pthread_join(emptierThreads[i],NULL);
+    }
+    
     /*###*/
     
 
