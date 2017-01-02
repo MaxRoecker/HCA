@@ -16,6 +16,8 @@
 #include <math.h>
 #include <limits.h>
 #include <pthread.h>
+#include <semaphore.h>
+#include <bits/stdio.h>
 #include "color.h"
 #include "util.h"
 #include "tabucol.h"
@@ -30,20 +32,16 @@ pthread_t crossOverThread;
 pthread_t tabucolThreads[BUFFER_SIZE];
 pthread_t updatePopulationThread;
 
-pthread_mutex_t mutex_pipeline_stage;
-pthread_mutex_t mutex_indexBufferCrossover;
-
-pthread_cond_t cond_pipeline_fill_buffer;
-pthread_cond_t cond_pipeline_empty_buffer;
-pthread_cond_t cond_pipeline_update_population;
+sem_t semFiller;
+sem_t semEmptier;
+sem_t semUpdater;
+pthread_barrier_t barrier;
 
 /* ### */
 
 static gcp_solution_t **population;
 static gcp_solution_t *best_solution;
 static gcp_solution_t *offspring;
-
-
 
 void hca_printbanner(void) {
     fprintf(problem->fileout, "HCA\n");
@@ -214,22 +212,23 @@ static void choose_parents(int *p1, int *p2) {
     }
 }
 
-static void crossover(int p1, int p2) {
+static void crossover(int p1, int p2, int posBuffer) {
+    /*####*/
     int color, parent, max, i, j, c, v, otherparent, p;
     int class_colors[2][problem->max_colors][problem->nof_vertices + 1];
 
-    offspring->nof_colors = problem->max_colors;
+    bufferCrossover[posBuffer]->nof_colors = problem->max_colors;
     for (i = 0; i < problem->nof_vertices; i++) {
-        offspring->color_of[i] = -1;
+        bufferCrossover[posBuffer]->color_of[i] = -1;
         for (c = 0; c < problem->max_colors; c++) {
             class_colors[0][c][i] = population[p1]->class_color[c][i];
             class_colors[1][c][i] = population[p2]->class_color[c][i];
-            offspring->class_color[c][i] = -1;
+            bufferCrossover[posBuffer]->class_color[c][i] = -1;
         }
     }
     for (c = 0; c < problem->max_colors; c++) {
-        offspring->class_color[c][0] = 0;
-        offspring->class_color[c][problem->nof_vertices] = -1;
+        bufferCrossover[posBuffer]->class_color[c][0] = 0;
+        bufferCrossover[posBuffer]->class_color[c][problem->nof_vertices] = -1;
         class_colors[0][c][problem->nof_vertices] =
                 population[p1]->class_color[c][problem->nof_vertices];
         class_colors[1][c][problem->nof_vertices] =
@@ -254,9 +253,9 @@ static void crossover(int p1, int p2) {
             v = class_colors[parent][max][i];
             class_colors[parent][max][i] = -1;
 
-            offspring->class_color[color][0]++;
-            offspring->class_color[color][offspring->class_color[color][0]] = v;
-            offspring->color_of[v] = color;
+            bufferCrossover[posBuffer]->class_color[color][0]++;
+            bufferCrossover[posBuffer]->class_color[color][bufferCrossover[posBuffer]->class_color[color][0]] = v;
+            bufferCrossover[posBuffer]->color_of[v] = color;
 
             /* Remove all vertices of <otherparent> */
             p = (otherparent == 0) ? p1 : p2;
@@ -279,21 +278,18 @@ static void crossover(int p1, int p2) {
 
     /* Assign randomly the vertices of V - (C_1 U ... U C_k) */
     for (i = 0; i < problem->nof_vertices; i++) {
-        if (offspring->color_of[i] == -1) {
+        if (bufferCrossover[posBuffer]->color_of[i] == -1) {
             c = (int) RANDOM(problem->max_colors);
-            offspring->color_of[i] = c;
-            offspring->class_color[c][0]++;
-            offspring->class_color[c][offspring->class_color[c][0]] = i;
+            bufferCrossover[posBuffer]->color_of[i] = c;
+            bufferCrossover[posBuffer]->class_color[c][0]++;
+            bufferCrossover[posBuffer]->class_color[c][bufferCrossover[posBuffer]->class_color[c][0]] = i;
         }
     }
 
     test_solution(population[p1]);
     test_solution(population[p2]);
-    test_solution(offspring);
-    
-    /*###*/    
-    cpy_solution(offspring,crossoverReturn);
-    /*###*/
+    test_solution(bufferCrossover[posBuffer]);
+    /*####*/
 }
 
 static int substitute_worst(int p1, int p2, gcp_solution_t* offspring) {/*{{{*/
@@ -351,46 +347,138 @@ static int hca_terminate_conditions(gcp_solution_t *solution, int diversity) {
 }
 
 /*###*/
-void *filler(void *threadId){
+int cross;
+
+void *filler(void *threadId) {
     long tid = (long) threadId;
     int parent1, parent2;
-    while(1){
-        pthread_mutex_lock(&mutex_pipeline_stage);
-        if(indexBufferCrossover == BUFFER_SIZE){
-            printf("Filler #%ld: Preencheu o buffer com filhos.\n",tid);
-            pthread_cond_broadcast(&cond_pipeline_empty_buffer);
-            pthread_cond_wait(&cond_pipeline_fill_buffer,&mutex_pipeline_stage);
-        }else{
+    sem_wait(&semFiller);
+    cross = 0;
+    while (1) {
+        if (indexBufferCrossover == BUFFER_SIZE) {
+            int i;
+            for (i = 0; i < BUFFER_SIZE; i++) {
+                sem_post(&semEmptier);
+            }
+            sem_wait(&semFiller);
+        } else {
             choose_parents(&parent1, &parent2);
-            crossover(parent1, parent2);
-            bufferCrossover[indexBufferCrossover] = crossoverReturn;
+            crossover(parent1, parent2, indexBufferCrossover);
             indexBufferCrossover++;
+            cross++;
         }
-        pthread_mutex_unlock(&mutex_pipeline_stage);
     }
 }
 
-void *emptier(void *threadId){
+void *emptier(void *threadId) {
     long int id = (long int) threadId;
-    while(1){
-        pthread_cond_wait(&cond_pipeline_empty_buffer,&mutex_pipeline_stage);
-        pthread_mutex_unlock(&mutex_pipeline_stage);
-        
-        /*int r = rand() % 10;
-        printf("Emptier #%ld: Esperar %d segundos\n",id,r);
-        sleep(r);*/
-        
-        gcp_solution_t *item = bufferCrossover[id];
-        printf("#%ld: pegou a solução com %d ciclos para realizar a Busca TABUCOL\n",id,item->cycles_to_best);
-        tabucol(item,hca_info->cyc_local_search,tabucol_info->tl_style);
-        printf("#%ld: Terminou tabucol - Conflitos: %d\n",id,item->nof_confl_edges);
-        pthread_mutex_lock(&mutex_indexBufferCrossover);
-        indexBufferCrossover--;
-        pthread_mutex_unlock(&mutex_indexBufferCrossover);
-        if(indexBufferCrossover == 0){
-            printf("#%ld: Acordou Filler\n",id);
-            pthread_cond_broadcast(&cond_pipeline_fill_buffer);
+    int contador = 0;
+    sem_wait(&semEmptier);
+    while (1) {
+        test_solution(bufferCrossover[id]);
+        tabucol(bufferCrossover[id], hca_info->cyc_local_search, tabucol_info->tl_style);
+
+        pthread_barrier_wait(&barrier);
+        if (id == 0) {
+            sem_post(&semUpdater);
         }
+        sem_wait(&semEmptier);
+    }
+}
+
+int findBestInBuffer() {
+    int posBest = 0;
+    int i;
+    for (i = 1; i < BUFFER_SIZE; i++) {
+        if (bufferCrossover[i]->nof_confl_vertices < bufferCrossover[posBest]->nof_confl_vertices) {
+            posBest = i;
+        }
+    }
+    return posBest;
+}
+
+int findWorstParent() {
+    int posWorst = 0;
+    int i;
+    for (i = 1; i < hca_info->sizeof_population; i++) {
+        if (population[i]->nof_confl_vertices > population[posWorst]->nof_confl_vertices) {
+            posWorst = i;
+        }
+    }
+    return posWorst;
+}
+
+/**
+ * Verifica se o pior da populacao é melhor que o melhor do buffer, se for ele mantem o cara no buffer para realizar tabucol de novo
+ * @return posicao do filho atualizado na populacao ou -1 caso o filho permaneceu no buffer
+ */
+int updatePopulation() {
+    int posWorst = findWorstParent();
+    int posBestBuffer = findBestInBuffer();
+    if (population[posWorst]->nof_confl_vertices > bufferCrossover[posBestBuffer]->nof_confl_vertices) {
+        cpy_solution(bufferCrossover[posBestBuffer], population[posWorst]);
+        return posWorst;
+    }
+    return -1;
+}
+
+void *updater(void *threadId) {
+    long int id = (long int) threadId;
+    int cycle = 0;
+    int converg = 0;
+    int cont = 0;
+    sem_wait(&semUpdater);
+    while (1) {
+        printf("#%ld: atualizando populacao - %d\n", id, cont++);
+
+        sem_post(&semFiller);
+        sem_wait(&semUpdater);
+
+        int sp = updatePopulation();
+
+        //verifica se atualizou na populacao ou manteve no buffer
+        if (sp >= 0) {
+            if (best_solution->nof_confl_edges > population[sp]->nof_confl_edges) {
+                cpy_solution(population[sp], best_solution);
+                best_solution->time_to_best = current_usertime_secs();
+                best_solution->cycles_to_best = cycle;
+                converg = 0;
+            }
+            indexBufferCrossover = 0;
+        } else {
+            printf("TA FODA SUBSTITUIR A POPULATION\n");
+            if (best_solution->nof_confl_edges > bufferCrossover[0]->nof_confl_edges) {
+                cpy_solution(bufferCrossover[0], best_solution);
+                best_solution->time_to_best = current_usertime_secs();
+                best_solution->cycles_to_best = cycle;
+                converg = 0;
+            }
+            indexBufferCrossover = 1;
+        }
+        
+        hca_info->diversity = calculate_diversity();
+        printf("Diversidade: %d\n",hca_info->diversity);
+
+        if (get_flag(problem->flags, FLAG_VERBOSE)) {
+            fprintf(problem->fileout, "HCA: cycle %d; best so far: %d; diversity: %d; parent substituted: %d\n",
+                    cycle, best_solution->nof_confl_edges, hca_info->diversity, sp + 1);
+        }
+
+        if (!(!hca_terminate_conditions(best_solution, hca_info->diversity) &&
+                !terminate_conditions(best_solution, cycle, converg))) {
+            best_solution->spent_time = current_usertime_secs();
+            best_solution->total_cycles = cycle;
+            hca_info->nof_cross = cross;
+
+            printf("FIIIMMM\n\n");
+            show_solution(best_solution);
+            
+            getchar();
+            exit(EXIT_SUCCESS);
+            //return best_solution;
+        }
+        cycle++;
+        converg++;
     }
 }
 
@@ -409,37 +497,37 @@ gcp_solution_t* hca(void) {
     best_solution->nof_confl_edges = INT_MAX;
     offspring = init_solution();
     /*###*/
-    crossoverReturn = init_solution();
+    indexBufferCrossover = 0;
     /*###*/
     create_population();
-    
+
     /*###*/
-    pthread_t fillerThreads[1];
+    pthread_t fillerThread;
     pthread_t emptierThreads[BUFFER_SIZE];
-    
-    pthread_mutex_init(&mutex_pipeline_stage, NULL);
-    pthread_mutex_init(&mutex_indexBufferCrossover, NULL);
-    pthread_cond_init(&cond_pipeline_empty_buffer, NULL);
-    pthread_cond_init(&cond_pipeline_fill_buffer, NULL);
-    pthread_cond_init(&cond_pipeline_update_population, NULL);
-    
-    long int i;
-    for(i = 0; i < 1; i++){
-        pthread_create(&fillerThreads[i],NULL,filler,(void*)i);
+    pthread_t updaterThread;
+
+    sem_init(&semFiller, 0, 1);
+    sem_init(&semEmptier, 0, 0);
+    sem_init(&semUpdater, 0, 0);
+    pthread_barrier_init(&barrier, NULL, BUFFER_SIZE);
+
+    long int i = 0;
+    pthread_create(&fillerThread, NULL, filler, (void*) i);
+    for (i = 0; i < BUFFER_SIZE; i++) {
+        pthread_create(&emptierThreads[i], NULL, emptier, (void*) i);
     }
-    for(i = 0; i < BUFFER_SIZE; i++){
-        pthread_create(&emptierThreads[i],NULL,emptier,(void*)i);
+    i = 0;
+    pthread_create(&updaterThread, NULL, updater, (void*) i);
+
+
+    pthread_join(fillerThread, NULL);
+    for (i = 0; i < BUFFER_SIZE; i++) {
+        pthread_join(emptierThreads[i], NULL);
     }
-    
-    for(i = 0; i < 1; i++){
-        pthread_join(fillerThreads[i],NULL);
-    }
-    for(i = 0; i < BUFFER_SIZE; i++){
-        pthread_join(emptierThreads[i],NULL);
-    }
-    
+    pthread_join(updaterThread, NULL);
+
     /*###*/
-    
+
 
     while (!hca_terminate_conditions(best_solution, hca_info->diversity) &&
             !terminate_conditions(best_solution, cycle, converg)) {
@@ -447,8 +535,8 @@ gcp_solution_t* hca(void) {
         /*choose_parents(&parent1, &parent2);
         crossover(parent1, parent2);
         cross++;*/
-        
-        
+
+
         tabucol(offspring, hca_info->cyc_local_search, tabucol_info->tl_style);
         sp = substitute_worst(parent1, parent2, offspring);
 

@@ -383,8 +383,6 @@ int terminate_conditions(gcp_solution_t *solution, int cycle, int converg) {
 /* ### */
 gcp_solution_t *bufferCrossover[BUFFER_SIZE];
 int indexBufferCrossover = 0;
-gcp_solution_t *bufferTabucol[BUFFER_SIZE];
-int indexBufferTabucol = 0;
 
 void initialize_buffer(){
     int i;
@@ -394,9 +392,9 @@ void initialize_buffer(){
 }
 
 /* ### */
-
+pthread_mutex_t m;
 int main(int argc, char *argv[]) {
-    
+    pthread_mutex_init(&m,NULL);
     struct timeval time;
     double time1, time2;
 

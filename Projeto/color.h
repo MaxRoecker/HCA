@@ -38,7 +38,7 @@
 #define STOP_ALG	5 // specific for some algorithms
 
 /*###*/
-#define BUFFER_SIZE 1
+#define BUFFER_SIZE 5
 /*###*/
 
 struct gcp_t {
